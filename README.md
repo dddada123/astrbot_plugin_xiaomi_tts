@@ -1,0 +1,2 @@
+# astrbot_plugin_xiaomi_tts
+调用小米音频克隆模型让爱弥斯说话
