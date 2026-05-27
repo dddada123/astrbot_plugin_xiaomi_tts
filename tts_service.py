@@ -7,13 +7,11 @@ from typing import Optional
 logger = logging.getLogger("astrbot")
 
 class MiMoTTSService:
-    """MiMo TTS 底层通信与音频缓存服务"""
+    """MiMo TTS 底层通信与音频缓存服务 (动态配置版)"""
     
-    def __init__(self, api_key: str, plugin_dir: str):
-        self.api_key = api_key.strip()
-        self.api_base_url = "https://api.xiaomimimo.com/v1"
+    def __init__(self, plugin_dir: str):
         self.plugin_dir = plugin_dir
-        # 内存缓存：存放所有本地音频的 DataURL
+        # 内存缓存：存放所有本地音频的 DataURL (音频预加载依然保留以保证性能)
         self.voices_cache = {}
         self._load_local_voices()
 
@@ -32,7 +30,6 @@ class MiMoTTSService:
                     with open(file_path, "rb") as f:
                         raw_b64 = base64.b64encode(f.read()).decode('utf-8')
                         mime_type = "audio/wav" if filename.lower().endswith('.wav') else "audio/mpeg"
-                        # 核心修补：自动补全官方要求的 DataURL 头部
                         self.voices_cache[filename] = f"data:{mime_type};base64,{raw_b64}"
                 except Exception as e:
                     logger.error(f"预加载音频 {filename} 失败: {e}")
@@ -51,17 +48,19 @@ class MiMoTTSService:
                 audio_bytes = await resp.read()
                 return f"data:audio/wav;base64,{base64.b64encode(audio_bytes).decode('utf-8')}"
 
-    async def synthesize(self, text: str, voice_filename: str, style_instruction: str, fallback_url: str) -> str:
+    # === 新增：每次合成时，实时接收 api_key 和 api_base_url ===
+    async def synthesize(self, text: str, voice_filename: str, style_instruction: str, fallback_url: str, api_key: str, api_base_url: str) -> str:
         """核心合成请求方法，不再分片，长文本一次性请求"""
-        if not self.api_key:
+        if not api_key:
             raise Exception("未配置小米 API Key。")
+            
+        if not (api_key.startswith("sk-") or api_key.startswith("tp-")):
+            logger.warning(f"⚠️ 警告: 你的小米 API Key 格式可能不正确（当前以 {api_key[:3]} 开头）。按量付费应为 sk-，Token Plan 应为 tp-。")
 
-        # 1. 获取音源 DataURL (优先内存缓存 -> 其次网络拉取)
         voice_data = self.voices_cache.get(voice_filename)
         if not voice_data:
             voice_data = await self.get_fallback_network_voice(fallback_url)
 
-        # 2. 组装 Payload
         payload = {
             "model": "mimo-v2.5-tts-voiceclone",
             "messages": [{"role": "assistant", "content": text}],
@@ -71,18 +70,16 @@ class MiMoTTSService:
             }
         }
         
-        # 动态语气注入点
         if style_instruction:
             payload["messages"].insert(0, {"role": "user", "content": style_instruction})
 
         headers = {
-            "Authorization": f"Bearer {self.api_key}",
+            "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json"
         }
 
-        # 3. 发送请求
         async with aiohttp.ClientSession() as session:
-            async with session.post(f"{self.api_base_url}/chat/completions", json=payload, headers=headers, timeout=60) as resp:
+            async with session.post(f"{api_base_url}/chat/completions", json=payload, headers=headers, timeout=60) as resp:
                 if resp.status != 200:
                     err_text = await resp.text()
                     raise Exception(f"小米API报错 HTTP {resp.status}: {err_text}")
