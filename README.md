@@ -1,4 +1,4 @@
-# readme_v2_content = """# 🎙️ astrbot_plugin_xiaomi_tts v1.1Beta
+# 🎙️ astrbot_plugin_xiaomi_tts v1.1Beta
 
 [![AstrBot](https://img.shields.io/badge/Framework-AstrBot-🚀_purple.svg)](https://github.com/Soulter/AstrBot)
 [![Model](https://img.shields.io/badge/Model-小米_MiMo_v2.5-orange.svg)](https://api.xiaomimimo.com)
