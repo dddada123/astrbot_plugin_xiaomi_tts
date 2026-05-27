@@ -1,38 +1,62 @@
 {
-    "api_key": {
-        "title": "小米 MiMo API Key",
-        "description": "请输入你在小米大模型开放平台申请的 API Key",
-        "type": "string",
-        "default": ""
-    },
-    "voice_url": {
-        "title": "参考音频直链 (URL)",
-        "description": "填入 3~10 秒的单声道 16kHz .wav 干音直链。推荐使用 GitHub 仓库挂载。",
-        "type": "string",
-        "default": ""
-    },
-    "use_cdn_acceleration": {
-        "title": "开启 GitHub CDN 镜像加速",
-        "description": "如果你的链接是 GitHub 地址，开启会自动转为 jsDelivr 加速链接（强烈建议）。非 GitHub 链接请关闭。",
-        "type": "bool",
-        "default": true
-    },
-    "voice_prompt": {
-        "title": "音色微调 Prompt",
-        "description": "告诉大模型用什么语气说话",
-        "type": "string",
-        "default": "保持参考音频的音色，用温柔的语气说话。"
-    },
-    "command_trigger": {
-        "title": "手动触发指令",
-        "description": "强制触发语音合成的指令前缀，可以保留 /tts，也可以改为中文如：说话",
-        "type": "string",
-        "default": "/tts"
-    },
-    "auto_voice_mode": {
-        "title": "🤖 智能语音模式 (Tool调用)",
-        "description": "开启后，大模型会根据聊天上下文自主决定是否发送语音（比如你说“发条语音”、“读一下”时自动触发）。",
-        "type": "bool",
-        "default": false
-    }
+  "plugin_enabled": {
+    "description": "🔌 插件全局开关",
+    "hint": "是否启用本插件。关闭后，手动指令和智能大模型Tool调用都将彻底失效。",
+    "type": "bool",
+    "default": true
+  },
+  "api_key": {
+    "description": "🔑 小米 MiMo API Key",
+    "hint": "请输入你在小米大模型开放平台申请的 API Key",
+    "type": "string",
+    "default": ""
+  },
+  "default_local_voice": {
+    "description": "💾 默认本地音频文件名",
+    "hint": "系统会在启动时预加载 audio 文件夹下所有的 wav/mp3。在此填入默认使用的文件名（如 Aemeath.wav）。",
+    "type": "string",
+    "default": "Aemeath.wav"
+  },
+  "voice_url": {
+    "description": "☁️ 网络参考音频直链 (备用)",
+    "hint": "如果本地 audio 文件夹为空或未找到指定文件，将回退尝试拉取此网络直链。",
+    "type": "string",
+    "default": ""
+  },
+  "voice_prompt": {
+    "description": "🎭 默认基础语气 (Prompt)",
+    "hint": "大模型没有主动设定情绪时，默认使用的基础语气指令。",
+    "type": "string",
+    "default": "保持参考音频的音色，用温柔的语气说话。"
+  },
+  "command_trigger": {
+    "description": "⚡ 手动触发指令",
+    "hint": "强制大模型用语音回复的指令前缀，如：小爱tts",
+    "type": "string",
+    "default": "小爱tts"
+  },
+  "allow_prefix_text": {
+    "description": "💬 允许大模型发送前置台词",
+    "hint": "开启后，大模型在发语音前可以先发一句文字（如“好嘞！”）。关闭则强制其静默，只发语音。",
+    "type": "bool",
+    "default": false
+  },
+  "auto_voice_mode": {
+    "description": "🤖 智能语音模式 (大模型自由调用)",
+    "hint": "开启后，大模型可自主根据语境发送语音。关闭后，仅在用户输入触发指令时才允许发送语音。",
+    "type": "bool",
+    "default": false
+  },
+  "enable_chat_notification": {
+    "description": "💬 聊天窗口状态提示",
+    "hint": "合成大段语音可能需要几秒钟。开启时会在聊天窗先发一句“正在合成...”安抚用户，关闭则只在后台输出。",
+    "type": "bool",
+    "default": true
+  },
+  "max_tts_text_length": {
+    "description": "📏 语音合成最大字符数",
+    "hint": "限制大模型生成语音文本的字符数，超出将在系统提示中要求精简，并兜底截断。用于节省费用并避免不完整语音。",
+    "type": "int",
+    "default": 50
+  }
 }

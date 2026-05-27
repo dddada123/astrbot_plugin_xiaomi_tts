@@ -1,8 +1,8 @@
 name: astrbot_plugin_xiaomi_tts
-display_name: 小爱语音克隆
+display_name: 小米MiMo音色克隆(终极防废话版)
 desc: 调用小米MiMo大模型的音色克隆TTS插件
 help: 略
-version: 1.0
+version: 1.1Beta
 author: Rua432
-repo: https://github.com/
+repo: https://github.com/dddada123/astrbot_plugin_xiaomi_tts
 
