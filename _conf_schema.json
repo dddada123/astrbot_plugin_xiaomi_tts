@@ -43,7 +43,7 @@
   },
   "command_trigger": {
     "description": "⚡ 手动触发指令",
-    "hint": "强制大模型用语音回复的指令前缀，如：小爱tts。推荐用自己的BOT唤醒词开头，不然可能无法调用成功" 
+    "hint": "强制大模型用语音回复的指令前缀，如：小爱tts，开头要和自己的bot唤醒词一致，否则可能无法调用llm工具",
     "type": "string",
     "default": "小爱tts"
   },
