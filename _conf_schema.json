@@ -1,56 +1,74 @@
 {
-    "plugin_enabled": {
-        "title": "🔌 插件全局开关",
-        "description": "是否启用本插件。关闭后，手动指令和智能大模型Tool调用都将彻底失效。",
-        "type": "bool",
-        "default": true
-    },
-    "api_key": {
-        "title": "小米 MiMo API Key",
-        "description": "请输入你在小米大模型开放平台申请的 API Key",
-        "type": "string",
-        "default": ""
-    },
-    "local_audio_filename": {
-        "title": "💾 本地音频文件名 (优先生效)",
-        "description": "请将 .wav 放入插件的 audio 文件夹内，并在此填写文件名（如 Aemeath.wav）。若填写此项，系统将优先读取本地文件。",
-        "type": "string",
-        "default": "Aemeath.wav"
-    },
-    "voice_url": {
-        "title": "☁️ 网络参考音频直链 (备用)",
-        "description": "如果不使用本地文件，请在此填入 GitHub 等音频直链作为备用方案。",
-        "type": "string",
-        "default": ""
-    },
-    "use_cdn_acceleration": {
-        "title": "开启 GitHub CDN 镜像加速 (仅针对网络直链)",
-        "description": "仅在上方使用 GitHub 备用链接时有效。",
-        "type": "bool",
-        "default": true
-    },
-    "voice_prompt": {
-        "title": "音色微调 Prompt",
-        "description": "告诉大模型用什么语气说话",
-        "type": "string",
-        "default": "保持参考音频的音色，用温柔的语气说话。"
-    },
-    "command_trigger": {
-        "title": "手动触发指令",
-        "description": "强制大模型用语音回复的指令前缀，如：小爱tts",
-        "type": "string",
-        "default": "小爱tts"
-    },
-    "auto_voice_mode": {
-        "title": "🤖 智能语音模式 (Tool自由调用)",
-        "description": "开启后，大模型会根据聊天上下文自主选择是否使用语音回复；关闭后，大模型绝不主动发起语音，只能通过手动触发指令逼迫其发音。",
-        "type": "bool",
-        "default": false
-    },
-    "enable_chat_notification": {
-        "title": "💬 聊天窗口状态提示",
-        "description": "开启时，在合成前会在聊天窗打印“正在准备声音...”；关闭时，该消息不会发到群里骚扰用户，只在后台日志打印。",
-        "type": "bool",
-        "default": true
-    }
+  "plugin_enabled": {
+    "description": "🔌 插件全局开关",
+    "hint": "是否启用本插件。关闭后，手动指令和智能大模型Tool调用都将彻底失效。",
+    "type": "bool",
+    "default": true
+  },
+  "api_key": {
+    "description": "🔑 小米 MiMo API Key",
+    "hint": "请输入你的 API Key (按量付费请填 sk- 开头，Token Plan订阅请填 tp- 开头)",
+    "type": "string",
+    "default": ""
+  },
+  "api_base_url": {
+    "description": "🌐 服务器集群节点 (Base URL)",
+    "hint": "按量付费(sk-)请保持默认。Token Plan(tp-)请务必选择对应的地区集群，否则会报401未授权。",
+    "type": "string",
+    "options": [
+      "官方默认节点 (https://api.xiaomimimo.com/v1)",
+      "中国集群 (https://token-plan-cn.xiaomimimo.com/v1)",
+      "新加坡集群 (https://token-plan-sgp.xiaomimimo.com/v1)",
+      "欧洲集群 (https://token-plan-ams.xiaomimimo.com/v1)"
+    ],
+    "default": "官方默认节点 (https://api.xiaomimimo.com/v1)"
+  },
+  "default_local_voice": {
+    "description": "💾 默认本地音频文件名",
+    "hint": "系统会在启动时预加载 audio 文件夹下所有的 wav/mp3。在此填入默认使用的文件名（如 Aemeath.wav）。",
+    "type": "string",
+    "default": "Aemeath.wav"
+  },
+  "voice_url": {
+    "description": "☁️ 网络参考音频直链 (备用)",
+    "hint": "如果本地 audio 文件夹为空或未找到指定文件，将回退尝试拉取此网络直链。",
+    "type": "string",
+    "default": ""
+  },
+  "voice_prompt": {
+    "description": "🎭 默认基础语气 (Prompt)",
+    "hint": "大模型没有主动设定情绪时，默认使用的基础语气指令。",
+    "type": "string",
+    "default": "保持参考音频的音色，用温柔的语气说话。"
+  },
+  "command_trigger": {
+    "description": "⚡ 手动触发指令",
+    "hint": "强制大模型用语音回复的指令前缀，如：小爱tts。推荐用自己的BOT唤醒词开头，不然可能无法调用成功" 
+    "type": "string",
+    "default": "小爱tts"
+  },
+  "allow_prefix_text": {
+    "description": "💬 允许大模型发送前置台词",
+    "hint": "开启后，大模型在发语音前可以先发一句文字（如“好嘞！”）。关闭则强制其静默，只发语音。",
+    "type": "bool",
+    "default": false
+  },
+  "auto_voice_mode": {
+    "description": "🤖 智能语音模式 (大模型自由调用)",
+    "hint": "开启后，大模型可自主根据语境发送语音。关闭后，仅在用户输入触发指令时才允许发送语音。",
+    "type": "bool",
+    "default": false
+  },
+  "enable_chat_notification": {
+    "description": "💬 聊天窗口状态提示",
+    "hint": "合成大段语音可能需要几秒钟。开启时会在聊天窗先发一句“正在合成...”安抚用户，关闭则只在后台输出。",
+    "type": "bool",
+    "default": true
+  },
+  "max_tts_text_length": {
+    "description": "📏 语音合成最大字符数",
+    "hint": "限制大模型生成语音文本的字符数，超出将在系统提示中要求精简，并兜底截断。用于节省费用并避免不完整语音。",
+    "type": "int",
+    "default": 50
+  }
 }
