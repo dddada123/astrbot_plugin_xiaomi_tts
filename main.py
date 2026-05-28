@@ -1,5 +1,6 @@
 import os
 import re
+import random
 import logging
 from astrbot.api.all import *
 from astrbot.core.message.components import Plain
@@ -17,7 +18,7 @@ except ImportError:
 
 logger = logging.getLogger("astrbot")
 
-@register("astrbot_plugin_xiaomi_tts", "Rua432", "1.2.3Beta", "小米MiMo音色克隆(暴力直读配置版)")
+@register("astrbot_plugin_xiaomi_tts", "Rua432", "1.2.3Beta", "小米MiMo音色克隆(随机彩蛋+认知门限版)")
 class XiaomiTTS(Star):
     def __init__(self, context: Context, config: dict):
         super().__init__(context)
@@ -29,22 +30,19 @@ class XiaomiTTS(Star):
         self.tts_service = MiMoTTSService(plugin_dir=plugin_dir)
 
     def get_dynamic_cfg(self, key, default):
-        """暴力越过框架内存，直接去硬盘读 WebUI 的最新配置，解决空字典和无法热重载问题"""
+        """暴力越过框架内存，直接去硬盘读 WebUI 的最新配置"""
         if yaml:
             try:
-                # AstrBot 的配置文件固定在这个路径
                 config_path = os.path.join(os.getcwd(), "data", "config.yaml")
                 if os.path.exists(config_path):
                     with open(config_path, "r", encoding="utf-8") as f:
                         data = yaml.safe_load(f)
                         if data:
-                            # 兼容新老名字的配置字典
                             plugin_cfg = data.get("astrbot_plugin_xiaomi_tts", data.get("xiaomi_tts", {}))
                             if key in plugin_cfg:
                                 return plugin_cfg[key]
             except Exception:
                 pass
-        # 如果读硬盘失败，才退回使用框架给的配置
         return self.config.get(key, default)
 
     def preprocess_text(self, text: str) -> str:
@@ -70,7 +68,6 @@ class XiaomiTTS(Star):
         try:
             cleaned_text = self.preprocess_text(text)
             
-            # 实时读取 API 和 集群配置
             api_key = self.get_dynamic_cfg("api_key", "").strip()
             raw_url_config = self.get_dynamic_cfg("api_base_url", "https://api.xiaomimimo.com/v1")
             url_match = re.search(r'https?://[^\)]+', raw_url_config)
@@ -95,18 +92,18 @@ class XiaomiTTS(Star):
     @llm_tool(name="set_voice_style")
     async def set_voice_style(self, event: AstrMessageEvent, style_tag: str):
         '''
-        语音情绪总监。当你准备使用语音（speak_tts）回复时，请根据你即将输出的【回复内容本身的情感】，先调用此工具设定你的语气。
+        语音情绪总监。决定发语音时，先调用此工具设定语气。
         Args:
             style_tag(str): 简短的语气词，如：撒娇的、开心的、傲娇的、委屈的、温柔的
         '''
-        style_tag = re.sub(r'^(超级|极度|无比|万分)', '', style_tag)
         session_id = str(event.session_id)
+        style_tag = re.sub(r'^(超级|极度|无比|万分)', '', style_tag)
         self.session_styles[session_id] = f"保持参考音频的音色，用{style_tag}语气说话。"
         
         if self.get_dynamic_cfg("allow_prefix_text", False):
             return f"系统指令：语气已锁定为 {style_tag}。请继续调用 speak_tts 发送语音。"
         else:
-            return f"系统指令：语气已锁定为 {style_tag}。现在请【立即】且【直接】调用 speak_tts 工具！绝对禁止在聊天框输出‘好嘞’、‘锁定完毕’等任何过渡废话！"
+            return f"系统指令：语气已锁定为 {style_tag}。现在请立即调用 speak_tts 工具！绝对禁止在聊天框输出任何废话！"
 
     @event_message_type(EventMessageType.ALL)
     async def message_handler(self, event: AstrMessageEvent):
@@ -114,39 +111,62 @@ class XiaomiTTS(Star):
         
         trigger = self.get_dynamic_cfg("command_trigger", "小爱tts").strip()
         msg = event.message_str.strip()
+        session_id = str(event.session_id)
         
+        is_forced = False
+        
+        # 1. 手动强制指令提取
         if msg.startswith(trigger):
+            is_forced = True
             content = msg[len(trigger):].strip()
             if not content:
                 yield event.plain_result("你想听什么？记得加上内容哦~")
                 event.stop_event()
                 return
             
-            session_id = str(event.session_id)
             self.forced_sessions.add(session_id)
-            
             for comp in event.message_obj.message:
                 if isinstance(comp, Plain) and trigger in comp.text:
                     comp.text = comp.text.replace(trigger, "").strip()
             
-            magic_prompt = "\n\n[系统指令：强制语音控制已开启！你必须调用 speak_tts 发送语音！]"
+            magic_prompt = "\n\n[系统指令：用户强制要求发语音！本轮必须调用 speak_tts 发送语音！]"
             event.message_obj.message.append(Plain(magic_prompt))
 
-        # ==========================================
-        # 核心防话痨拦截网（彻底补上前置文本的漏洞）
-        # ==========================================
+        # 2. 混合双轨智能调度系统 (随机概率门 + 认知打分门)
+        auto_mode = self.get_dynamic_cfg("auto_voice_mode", False)
         allow_prefix = self.get_dynamic_cfg("allow_prefix_text", False)
         max_len = int(self.get_dynamic_cfg("max_tts_text_length", 50))
         
-        base_rule = f"\n[语音绝对规则：决定发语音时，必须先调用 set_voice_style，再调用 speak_tts。注意：你所有的回复内容必须【全部、毫无保留地】塞进 speak_tts 的 text 参数中！并且语音文本必须严格控制在 {max_len} 字以内，极度精简！]"
-        
-        if not allow_prefix:
-            # 物理级禁言令，不留任何发文字的漏洞
-            final_prompt = base_rule + " [最高物理约束：本轮对话你【只能】通过工具发声！绝对禁止在聊天框输出任何纯文字（不准有前置台词、不准有动作描写、不准有后置解释）！想说的话必须全放进工具参数里，调用完毕立刻静默！]"
-        else:
-            final_prompt = base_rule + " [交互提示：在调用工具前可以发一句简短前置文字，但在 speak_tts 执行完后绝对禁止发任何后置文字！]"
+        if is_forced:
+            base_rule = f"\n[语音绝对规则：必须先调用 set_voice_style，再调 speak_tts。内容全塞进 text 参数，限 {max_len} 字！]"
+            if not allow_prefix:
+                final_prompt = base_rule + " [约束：本轮你【只能】通过工具发声！绝对禁止在聊天框输出纯文字！]"
+            else:
+                final_prompt = base_rule + " [约束：调用工具前可发一句简短前置，执行完后绝对禁止发后置文字！]"
+            event.message_obj.message.append(Plain(final_prompt))
             
-        event.message_obj.message.append(Plain(final_prompt))
+        elif auto_mode:
+            # 🎲 轨道一：后台默认 5% 概率直接唤醒随机语音彩蛋
+            lucky_drop = (random.random() < 0.05)
+            
+            if lucky_drop:
+                # 抽中 5% 概率，强行让大模型发语音制造惊喜
+                lucky_prompt = f"\n[系统隐藏彩蛋机制触发：本轮请给群友一个小惊喜！你【必须】调用 set_voice_style 和 speak_tts 发送语音回复！内容全塞进 text 参数，限 {max_len} 字！]"
+                if not allow_prefix:
+                    lucky_prompt += " [约束：绝对禁止在工具外打字！]"
+                event.message_obj.message.append(Plain(lucky_prompt))
+            else:
+                # 🎯 轨道二：未抽中彩蛋时，转入 LLM 0-100分 认知意图判断
+                cognitive_gate_prompt = (
+                    f"\n\n[🧠 智能语音决策系统]\n"
+                    f"你拥有 speak_tts 工具。请抛弃上一轮是否调用过工具的惯性，重新评估以下规则：\n"
+                    f"1. 意图打分：请在内心对用户这句话的“语音互动渴望度”以及“语境契合度”进行 0-100 分的严苛打分。\n"
+                    f"   - 日常灌水、纯灌水、普通闲聊、信息探讨：低于 30 分。\n"
+                    f"   - 用户明确表现出想听你声音、触发特定的早安/晚安仪式、或者当前内容你需要表达极度强烈的撒娇/傲娇情感互动：高于 80 分。\n"
+                    f"2. 决策准则：只有当你内心的评估分数【高于 80 分】时，才允许调用语音工具（先 set_voice_style 再 speak_tts）；否则【必须】直接使用普通的【纯文字】进行日常回复！\n"
+                    f"3. 防话痨约束：一旦满足高分条件决定使用语音，所有的回复内容必须【全部】塞进 text 参数中（限 {max_len} 字），且绝对禁止在工具外打字！"
+                )
+                event.message_obj.message.append(Plain(cognitive_gate_prompt))
 
     @llm_tool(name="speak_tts")
     async def auto_speak_tts(self, event: AstrMessageEvent, text: str):
@@ -164,9 +184,9 @@ class XiaomiTTS(Star):
         
         if is_forced:
             self.forced_sessions.discard(session_id)
-        
-        if not auto_mode and not is_forced:
-            return "系统拦截：未开启智能语音模式，请使用纯文字回答用户。"
+        else:
+            if not auto_mode:
+                return "系统拦截：未开启智能语音模式，请使用纯文字回答用户。"
 
         max_len = int(self.get_dynamic_cfg("max_tts_text_length", 50))
         if len(text) > max_len:
