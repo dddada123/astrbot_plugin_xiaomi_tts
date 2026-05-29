@@ -17,7 +17,7 @@ except ImportError:
 
 logger = logging.getLogger("astrbot")
 
-@register("astrbot_plugin_xiaomi_tts", "Rua432", "1.6.9", "修好智能模式和强制唤醒的逻辑BUG")
+@register("astrbot_plugin_xiaomi_tts", "Rua432", "1.7.0", "经典双轨+防缓存污染最终版")
 class XiaomiTTS(Star):
     def __init__(self, context: Context, config: dict):
         super().__init__(context)
@@ -44,7 +44,6 @@ class XiaomiTTS(Star):
 
     def preprocess_text(self, text: str) -> str:
         if not text: return text
-        # 深度清洗乱码
         text = re.sub(r'&&[a-zA-Z0-9_]+&&', '', text)
         text = re.sub(r'&[a-zA-Z0-9]+;', '', text)
         text = re.sub(r'(?i)ciallo', '掐萝', text)
@@ -60,7 +59,6 @@ class XiaomiTTS(Star):
         
         self.session_states[session_id] = "DISABLED"
         
-        # 宽容正则：匹配 0-6个字的唤醒词(可选) + 触发词，并且无视大小写
         pattern = re.compile(rf'^\s*(?:[\w\u4e00-\u9fa5]{{1,6}}\s*)?({re.escape(trigger)})', re.IGNORECASE)
         match = pattern.match(msg)
         
@@ -68,7 +66,6 @@ class XiaomiTTS(Star):
             logger.info("🎙️ [TTS路由] 语音匹配✅ -> 注入强制指令并执行物理切词")
             self.session_states[session_id] = "FORCED"
             
-            # 使用正则替换，无视大小写，直接把开头命中（名字+触发词）的部分连根拔起
             for comp in event.message_obj.message:
                 if isinstance(comp, Plain):
                     new_text = pattern.sub("", comp.text, count=1).strip()
@@ -80,6 +77,16 @@ class XiaomiTTS(Star):
             event.message_obj.message.append(Plain(prompt))
             return
 
+        # 🚨 【核心修复】：目标检测，防止污染群聊消息缓存
+        # 检查是否为群聊，以及机器人是否被明确 @ 
+        is_group = getattr(event.message_obj, 'group_id', None) is not None
+        is_at = getattr(event, 'is_at_or_wake_word', False) or getattr(event.message_obj, 'is_at', False)
+        
+        # 如果是群聊里的普通闲聊（没被@），直接原样放行！不注入任何指令，保持缓存干干净净！
+        if is_group and not is_at:
+            return
+
+        # 只有在私聊，或者群聊被 @ 时，才去注入系统指令
         if self.get_dynamic_cfg("auto_voice_mode", False):
             if random.random() < 0.05:
                 logger.info("🎲 [TTS路由] 彩蛋匹配✅")
@@ -91,7 +98,6 @@ class XiaomiTTS(Star):
                 prompt = "\n\n[系统指令：本轮为智能语音模式。请自评语音渴望度(0-100)，先调用 set_voice_style 打分。若 >80 分，继续调用 speak_tts；若 <80 分，直接打字回复！]"
                 event.message_obj.message.append(Plain(prompt))
         else:
-            # 🚨 动态注入“物理封印”，强行压制大模型的工具幻觉
             prompt = "\n\n[系统指令：本轮为纯文本聊天，严禁调用任何语音工具！直接输出文字。]"
             event.message_obj.message.append(Plain(prompt))
 
@@ -110,7 +116,6 @@ class XiaomiTTS(Star):
         if not isinstance(intent_score, int):
             intent_score = 50
             
-        # 记录语气标签供下一个工具使用
         self.session_states[f"style_{session_id}"] = style_tag
 
         if state in ["FORCED", "FORCED_EASTER_EGG"]:
@@ -146,7 +151,6 @@ class XiaomiTTS(Star):
             yield event.plain_result(clean_text)
             return
 
-        # 文字输出开关（双发模式）
         if self.get_dynamic_cfg("enable_text_output", False):
             yield event.plain_result(clean_text)
 
@@ -176,6 +180,4 @@ class XiaomiTTS(Star):
             logger.error(f"TTS 合成异常: {e}")
             yield event.plain_result(f"⚠️ 语音卡壳了: {e}")
             
-        # 完美软着陆：只用空的 return，让系统正常流转
-        # 这样既不会报 SyntaxError，也不会因为 stop_event 杀死表情包等其他插件！
         return
