@@ -17,7 +17,7 @@ except ImportError:
 
 logger = logging.getLogger("astrbot")
 
-@register("astrbot_plugin_xiaomi_tts", "Rua432", "1.7.4 Stable", "经典双轨+精确切词+动态封印+完美共存")
+@register("astrbot_plugin_xiaomi_tts", "Rua432", "1.6.9", "修好智能模式和强制唤醒的逻辑BUG")
 class XiaomiTTS(Star):
     def __init__(self, context: Context, config: dict):
         super().__init__(context)
