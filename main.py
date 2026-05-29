@@ -17,7 +17,7 @@ except ImportError:
 
 logger = logging.getLogger("astrbot")
 
-@register("astrbot_plugin_xiaomi_tts", "Rua432", "1.7.0", "经典双轨+防缓存污染最终版")
+@register("astrbot_plugin_xiaomi_tts", "Rua432", "1.7.9", "群聊靶向静默+防Token消耗最终版")
 class XiaomiTTS(Star):
     def __init__(self, context: Context, config: dict):
         super().__init__(context)
@@ -35,15 +35,51 @@ class XiaomiTTS(Star):
                     with open(config_path, "r", encoding="utf-8") as f:
                         data = yaml.safe_load(f)
                         if data:
-                            plugin_cfg = data.get("astrbot_plugin_xiaomi_tts", data.get("xiaomi_tts", {}))
+                            plugins_dict = data.get("plugins", data)
+                            plugin_cfg = plugins_dict.get("astrbot_plugin_xiaomi_tts", plugins_dict.get("xiaomi_tts", {}))
                             if key in plugin_cfg:
                                 return plugin_cfg[key]
             except Exception:
                 pass
         return self.config.get(key, default)
 
+    def is_bot_targeted(self, event: AstrMessageEvent, msg_str: str) -> bool:
+        """精准检测是否在跟机器人说话（@ 或者 唤醒词）"""
+        # 1. 检查是否包含 @ 组件
+        for comp in event.message_obj.message:
+            if type(comp).__name__ == "At":
+                return True
+                
+        # 2. 检查框架自带的快捷属性
+        if getattr(event, 'is_at_or_wake_word', False) or getattr(event.message_obj, 'is_at', False):
+            return True
+            
+        # 3. 终极物理兜底：直接读取 AstrBot 全局唤醒词配置
+        wake_words = []
+        try:
+            config_path = os.path.join(os.getcwd(), "data", "config.yaml")
+            if os.path.exists(config_path):
+                with open(config_path, "r", encoding="utf-8") as f:
+                    data = yaml.safe_load(f)
+                    if data and "provider" in data and "wake_word" in data["provider"]:
+                        # 拿到全局配置的机器人名字列表
+                        wake_words = data["provider"]["wake_word"]
+        except Exception:
+            pass
+            
+        if not wake_words:
+            wake_words = ["小爱"] # 默认兜底
+            
+        # 只要群聊消息是以机器人的名字开头的，立刻判定为唤醒！
+        for w in wake_words:
+            if msg_str.startswith(w):
+                return True
+                
+        return False
+
     def preprocess_text(self, text: str) -> str:
         if not text: return text
+        # 深度清洗乱码
         text = re.sub(r'&&[a-zA-Z0-9_]+&&', '', text)
         text = re.sub(r'&[a-zA-Z0-9]+;', '', text)
         text = re.sub(r'(?i)ciallo', '掐萝', text)
@@ -59,34 +95,35 @@ class XiaomiTTS(Star):
         
         self.session_states[session_id] = "DISABLED"
         
+        # 宽容正则：匹配 0-6个字的唤醒词(可选) + 触发词
         pattern = re.compile(rf'^\s*(?:[\w\u4e00-\u9fa5]{{1,6}}\s*)?({re.escape(trigger)})', re.IGNORECASE)
         match = pattern.match(msg)
         
         if match:
             logger.info("🎙️ [TTS路由] 语音匹配✅ -> 注入强制指令并执行物理切词")
             self.session_states[session_id] = "FORCED"
-            
             for comp in event.message_obj.message:
                 if isinstance(comp, Plain):
                     new_text = pattern.sub("", comp.text, count=1).strip()
                     if new_text != comp.text:
                         comp.text = new_text
                         break
-                    
             prompt = "\n\n[最高指令：用户已下达语音指令。本轮你【必须】调用 set_voice_style 给100分，随后立即调用 speak_tts 发送语音。绝对禁止输出纯文字！]"
             event.message_obj.message.append(Plain(prompt))
             return
 
-        # 🚨 【核心修复】：目标检测，防止污染群聊消息缓存
-        # 检查是否为群聊，以及机器人是否被明确 @ 
-        is_group = getattr(event.message_obj, 'group_id', None) is not None
-        is_at = getattr(event, 'is_at_or_wake_word', False) or getattr(event.message_obj, 'is_at', False)
+        # 🚨 【群聊静默核心逻辑】：精准区分路人闲聊与呼叫机器人
+        raw_group_id = getattr(event.message_obj, 'group_id', None)
+        is_group = bool(raw_group_id and str(raw_group_id).strip() not in ["0", "None", ""])
+        is_target = self.is_bot_targeted(event, msg)
         
-        # 如果是群聊里的普通闲聊（没被@），直接原样放行！不注入任何指令，保持缓存干干净净！
-        if is_group and not is_at:
+        if is_group and not is_target:
+            # 🛡️ 群聊且未收到明确唤醒：直接静默退出！工具彻底挂起，保护免费 Token！
             return
 
-        # 只有在私聊，或者群聊被 @ 时，才去注入系统指令
+        # ==========================================
+        # 只有私聊，或者群聊被明确呼叫（@ 或 叫名字），才会走到这里进行判定！
+        # ==========================================
         if self.get_dynamic_cfg("auto_voice_mode", False):
             if random.random() < 0.05:
                 logger.info("🎲 [TTS路由] 彩蛋匹配✅")
@@ -116,6 +153,7 @@ class XiaomiTTS(Star):
         if not isinstance(intent_score, int):
             intent_score = 50
             
+        # 记录语气标签供下一个工具使用
         self.session_states[f"style_{session_id}"] = style_tag
 
         if state in ["FORCED", "FORCED_EASTER_EGG"]:
@@ -151,6 +189,7 @@ class XiaomiTTS(Star):
             yield event.plain_result(clean_text)
             return
 
+        # 文字输出开关（双发模式）
         if self.get_dynamic_cfg("enable_text_output", False):
             yield event.plain_result(clean_text)
 
@@ -180,4 +219,5 @@ class XiaomiTTS(Star):
             logger.error(f"TTS 合成异常: {e}")
             yield event.plain_result(f"⚠️ 语音卡壳了: {e}")
             
+        # 完美软着陆：只用空的 return，让系统正常流转，不杀其他插件！
         return
