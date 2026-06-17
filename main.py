@@ -3,7 +3,7 @@ import re
 import random
 import logging
 from astrbot.api.all import *
-from astrbot.core.message.components import Plain
+from astrbot.core.message.components import Plain, Record
 
 try:
     import yaml
@@ -62,7 +62,6 @@ class XiaomiTTS(Star):
                 with open(config_path, "r", encoding="utf-8") as f:
                     data = yaml.safe_load(f)
                     if data and "provider" in data and "wake_word" in data["provider"]:
-                        # 拿到全局配置的机器人名字列表
                         wake_words = data["provider"]["wake_word"]
         except Exception:
             pass
@@ -70,7 +69,6 @@ class XiaomiTTS(Star):
         if not wake_words:
             wake_words = ["小爱"] # 默认兜底
             
-        # 只要群聊消息是以机器人的名字开头的，立刻判定为唤醒！
         for w in wake_words:
             if msg_str.startswith(w):
                 return True
@@ -118,7 +116,7 @@ class XiaomiTTS(Star):
         is_target = self.is_bot_targeted(event, msg)
         
         if is_group and not is_target:
-            # 🛡️ 群聊且未收到明确唤醒：直接静默退出！工具彻底挂起，保护免费 Token！
+            # 🛡️ 群聊且未收到明确唤醒：直接静默退出！
             return
 
         # ==========================================
@@ -142,7 +140,7 @@ class XiaomiTTS(Star):
     async def set_voice_style(self, event: AstrMessageEvent, intent_score: int = 100, style_tag: str = "无"):
         '''
         【语音前置判定工具】
-        注意：仅当系统提示中明确出现“[最高指令]”或“[系统指令]”要求你发语音时，才允许调用此工具！普通的纯文字聊天中，【绝对禁止】调用此工具！
+        注意：仅当系统提示中明确要求你发语音时才允许调用此工具！
         Args:
             intent_score(int): 语音渴望度(0-100)。如系统指令要求强制发音，请直接给100分。
             style_tag(str): 语气词标签（如：温柔的、害羞的、调皮的）。
@@ -153,7 +151,6 @@ class XiaomiTTS(Star):
         if not isinstance(intent_score, int):
             intent_score = 50
             
-        # 记录语气标签供下一个工具使用
         self.session_states[f"style_{session_id}"] = style_tag
 
         if state in ["FORCED", "FORCED_EASTER_EGG"]:
@@ -169,7 +166,9 @@ class XiaomiTTS(Star):
                 return "分数不足。请放弃调用 speak_tts，直接使用普通文本回复用户。"
                 
         else:
-            return "未开启语音模式，请放弃调用 speak_tts，使用普通文本回复。"
+            # 💡 修复点1：如果大模型基于记忆强行判定要发语音，即使处于 DISABLED，也绝对放行！
+            logger.info(f"🧠 [TTS判定] 权限: DISABLED 但大模型强行越权调用 -> 兜底放行！语气: {style_tag}")
+            return "已接收语气设置。请调用 speak_tts 输出语音。"
 
     @llm_tool(name="speak_tts")
     async def speak_tts(self, event: AstrMessageEvent, text: str):
@@ -180,16 +179,15 @@ class XiaomiTTS(Star):
             text(str): 必须填入你想回复给用户的完整文本内容。
         '''
         session_id = str(event.session_id)
-        state = self.session_states.get(session_id, "DISABLED")
         style_tag = self.session_states.get(f"style_{session_id}", "无")
         
         clean_text = self.preprocess_text(text)
-        
-        if state == "DISABLED":
-            yield event.plain_result(clean_text)
-            return
 
-        # 文字输出开关（双发模式）
+        # 💡 修复点2：废弃原先的拦截机制（让模型掌握终极决定权）
+        # if state == "DISABLED":
+        #     yield event.plain_result(clean_text)
+        #     return
+
         if self.get_dynamic_cfg("enable_text_output", False):
             yield event.plain_result(clean_text)
 
@@ -219,5 +217,19 @@ class XiaomiTTS(Star):
             logger.error(f"TTS 合成异常: {e}")
             yield event.plain_result(f"⚠️ 语音卡壳了: {e}")
             
-        # 完美软着陆：只用空的 return，让系统正常流转，不杀其他插件！
         return
+
+    @llm_tool(name="mimo_tts_speak")
+    async def mimo_tts_speak_alias(self, event: AstrMessageEvent, text: str, emotion: str = "normal"):
+        '''
+        【历史兼容遗留工具】功能等同于 speak_tts。
+        Args:
+            text(str): 要转为语音的文本
+            emotion(str): 情绪标签
+        '''
+        # 💡 修复点3：添加记忆幻觉兜底工具！
+        # 如果大模型因为错误记忆调用了这个不存在的工具，无缝接力给核心函数
+        logger.warning(f"🎙️ [TTS兼容] 捕获到大模型记忆幻觉，自动导流到 speak_tts。")
+        self.session_states[f"style_{event.session_id}"] = emotion
+        async for result in self.speak_tts(event, text):
+            yield result
