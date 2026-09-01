@@ -73,11 +73,11 @@ class XiaomiTTS(Star):
         
         # 可选的双发模式（先发文字，再发语音）
         if self.config.get("enable_text_output", False):
-            await event.send(Plain(clean_text))
+            await event.send(MessageChain([Plain(clean_text)]))
             
         # 聊天框提示（避免用户等太久觉得卡死了）
         if self.config.get("enable_chat_notification", True):
-            await event.send(Plain(f"🎙️ [TTS 生成中 | 语气:{emotion_style}] 请稍候..."))
+            await event.send(MessageChain([Plain(f"🎙️ [TTS 生成中 | 语气:{emotion_style}] 请稍候...")]))
 
         try:
             api_key = self.config.get("api_key", "").strip()
